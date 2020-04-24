@@ -465,7 +465,7 @@ fn persy_random_crud(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("random removals", |b| {
+    c.bench_function("persy: random removals", |b| {
         b.iter(|| {
             let k = random(SIZE).to_be_bytes().to_vec().into();
             let mut tx = db.begin().unwrap();
@@ -482,19 +482,19 @@ fn persy_empty_opens(c: &mut Criterion) {
 criterion_group!(
     benches,
     //
-    sled_bulk_load,
-    tx_sled_bulk_load,
-    persy_bulk_load,
+    // sled_bulk_load,
+    // tx_sled_bulk_load,
+    // persy_bulk_load,
     //
     sled_monotonic_crud,
     tx_sled_monotonic_crud,
-    persy_monotonic_crud,
+    // persy_monotonic_crud,
     //
     sled_random_crud,
     tx_sled_random_crud,
-    persy_random_crud,
+    // persy_random_crud,
     //
-    sled_empty_opens,
-    persy_empty_opens,
+    // sled_empty_opens,
+    // persy_empty_opens,
 );
 criterion_main!(benches);
