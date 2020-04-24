@@ -395,49 +395,76 @@ fn persy_monotonic_crud(c: &mut Criterion) {
     tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE).unwrap();
     tx.prepare_commit().unwrap().commit().unwrap();
 
-    c.bench_function("persy: monotonic inserts", |b| {
-        let mut count = 0_u32;
-        b.iter(|| {
-            count += 1;
-            let mut tx = db.begin().unwrap();
-            tx.put::<ByteVec, ByteVec>(
-                "",
-                count.to_be_bytes().to_vec().into(),
-                vec![].into(),
-            )
-            .unwrap();
-            tx.prepare_commit().unwrap().commit().unwrap();
-        })
-    });
+    let mut bench = |batch_size: usize| {
+        c.bench_function(
+            &format!("monotonic inserts persy, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        let mut tx = db.begin().unwrap();
+                        for count in chunk {
+                            tx.put::<ByteVec, ByteVec>(
+                                "",
+                                count.to_be_bytes().to_vec().into(),
+                                vec![].into(),
+                            )
+                            .unwrap();
+                        }
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("persy: monotonic gets", |b| {
-        let mut count = 0_u32;
-        b.iter(|| {
-            count += 1;
-            let mut tx = db.begin().unwrap();
-            tx.get::<ByteVec, ByteVec>(
-                "",
-                &count.to_be_bytes().to_vec().into(),
-            )
-            .unwrap();
-            tx.prepare_commit().unwrap().commit().unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("monotonic gets persy, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        let mut tx = db.begin().unwrap();
+                        for count in chunk {
+                            tx.get::<ByteVec, ByteVec>(
+                                "",
+                                &count.to_be_bytes().to_vec().into(),
+                            )
+                            .unwrap();
+                        }
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("persy: monotonic removals", |b| {
-        let mut count = 0_u32;
-        b.iter(|| {
-            count += 1;
-            let mut tx = db.begin().unwrap();
-            tx.remove::<ByteVec, ByteVec>(
-                "",
-                count.to_be_bytes().to_vec().into(),
-                None,
-            )
-            .unwrap();
-            tx.prepare_commit().unwrap().commit().unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("monotonic removals persy, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        let mut tx = db.begin().unwrap();
+                        for count in chunk {
+                            tx.remove::<ByteVec, ByteVec>(
+                                "",
+                                count.to_be_bytes().to_vec().into(),
+                                None,
+                            )
+                            .unwrap();
+                        }
+                    }
+                    start.elapsed()
+                })
+            },
+        );
+    };
+
+    for bs in BATCH_SIZES {
+        bench(*bs);
+    }
 }
 
 fn persy_random_crud(c: &mut Criterion) {
@@ -450,32 +477,66 @@ fn persy_random_crud(c: &mut Criterion) {
     tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE).unwrap();
     tx.prepare_commit().unwrap().commit().unwrap();
 
-    c.bench_function("persy: random inserts", |b| {
-        b.iter(|| {
-            let k = random(SIZE).to_be_bytes().to_vec().into();
-            let mut tx = db.begin().unwrap();
-            tx.put::<ByteVec, ByteVec>("", k, vec![].into()).unwrap();
-            tx.prepare_commit().unwrap().commit().unwrap();
-        })
-    });
+    let mut bench = |batch_size: usize| {
+        c.bench_function(
+            &format!("random inserts persy, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        let mut tx = db.begin().unwrap();
+                        for _ in chunk {
+                            let k = random(SIZE).to_be_bytes().to_vec().into();
+                            tx.put::<ByteVec, ByteVec>("", k, vec![].into())
+                                .unwrap();
+                        }
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("persy: random gets", |b| {
-        b.iter(|| {
-            let k = random(SIZE).to_be_bytes().to_vec();
-            let mut tx = db.begin().unwrap();
-            tx.get::<ByteVec, ByteVec>("", &k.into()).unwrap();
-            tx.prepare_commit().unwrap().commit().unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("random gets persy, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        let mut tx = db.begin().unwrap();
+                        for _ in chunk {
+                            let k = random(SIZE).to_be_bytes().to_vec().into();
+                            tx.get::<ByteVec, ByteVec>("", &k).unwrap();
+                        }
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("persy: random removals", |b| {
-        b.iter(|| {
-            let k = random(SIZE).to_be_bytes().to_vec().into();
-            let mut tx = db.begin().unwrap();
-            tx.remove::<ByteVec, ByteVec>("", k, None).unwrap();
-            tx.prepare_commit().unwrap().commit().unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("random removals persy, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        let mut tx = db.begin().unwrap();
+                        for _ in chunk {
+                            let k = random(SIZE).to_be_bytes().to_vec().into();
+                            tx.remove::<ByteVec, ByteVec>("", k, None).unwrap();
+                        }
+                    }
+                    start.elapsed()
+                })
+            },
+        );
+    };
+
+    for bs in BATCH_SIZES {
+        bench(*bs);
+    }
 }
 
 fn persy_empty_opens(c: &mut Criterion) {
