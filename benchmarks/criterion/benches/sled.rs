@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::time::Instant;
 
 use jemallocator::Jemalloc;
 
@@ -50,7 +51,7 @@ fn sled_bulk_load(c: &mut Criterion) {
     let mut count = 0_u32;
     let mut bytes = |len| -> Vec<u8> {
         count += 1;
-        count.to_be_bytes().into_iter().cycle().take(len).copied().collect()
+        count.to_be_bytes().iter().cycle().take(len).copied().collect()
     };
 
     let mut bench = |key_len, val_len| {
@@ -133,6 +134,131 @@ fn sled_random_crud(c: &mut Criterion) {
     });
 }
 
+fn tx_sled_bulk_load(c: &mut Criterion) {
+    let mut bench = |key_len, val_len| {
+        let db = Config::new()
+            .path(format!("bulk_k{}_v{}", key_len, val_len))
+            .temporary(true)
+            .flush_every_ms(None)
+            .open()
+            .unwrap();
+
+        c.bench_function(
+            &format!("bulk load key/value lengths {}/{}", key_len, val_len),
+            |b| {
+                b.iter_custom(|iters| {
+                    let start = Instant::now();
+                    db.transaction::<_, _, ()>(|db| {
+                        let mut count = 0_u32;
+                        let mut bytes = |len| -> Vec<u8> {
+                            count += 1;
+                            count
+                                .to_be_bytes()
+                                .iter()
+                                .cycle()
+                                .take(len)
+                                .copied()
+                                .collect()
+                        };
+
+                        for _ in 0..iters {
+                            db.insert(bytes(key_len), bytes(val_len))?;
+                        }
+                        Ok(())
+                    })
+                    .unwrap();
+                    start.elapsed()
+                });
+            },
+        );
+    };
+
+    for key_len in &[10_usize, 128, 256, 512] {
+        for val_len in &[0_usize, 10, 128, 256, 512, 1024, 2048, 4096, 8192] {
+            bench(*key_len, *val_len)
+        }
+    }
+}
+
+fn tx_sled_monotonic_crud(c: &mut Criterion) {
+    let db = Config::new().temporary(true).flush_every_ms(None).open().unwrap();
+
+    c.bench_function("tx monotonic inserts", |b| {
+        let mut count = 0_u32;
+        b.iter(|| {
+            count += 1;
+            db.transaction::<_, _, ()>(|db| {
+                db.insert(&count.to_be_bytes(), vec![])?;
+                Ok(())
+            })
+            .unwrap();
+        })
+    });
+
+    c.bench_function("tx monotonic gets", |b| {
+        let mut count = 0_u32;
+        b.iter(|| {
+            count += 1;
+            db.transaction::<_, _, ()>(|db| {
+                db.get(&count.to_be_bytes())?;
+                Ok(())
+            })
+            .unwrap();
+        })
+    });
+
+    c.bench_function("tx monotonic removals", |b| {
+        let mut count = 0_u32;
+        b.iter(|| {
+            count += 1;
+            db.transaction::<_, _, ()>(|db| {
+                db.remove(&count.to_be_bytes())?;
+                Ok(())
+            })
+            .unwrap();
+        })
+    });
+}
+
+fn tx_sled_random_crud(c: &mut Criterion) {
+    const SIZE: u32 = 65536;
+
+    let db = Config::new().temporary(true).flush_every_ms(None).open().unwrap();
+
+    c.bench_function("tx random inserts", |b| {
+        b.iter(|| {
+            let k = random(SIZE).to_be_bytes();
+            db.transaction::<_, _, sled::Error>(|db| {
+                db.insert(&k, vec![])?;
+                Ok(())
+            })
+            .unwrap();
+        })
+    });
+
+    c.bench_function("tx random gets", |b| {
+        b.iter(|| {
+            let k = random(SIZE).to_be_bytes();
+            db.transaction::<_, _, sled::Error>(|db| {
+                db.get(&k)?;
+                Ok(())
+            })
+            .unwrap();
+        })
+    });
+
+    c.bench_function("tx random removals", |b| {
+        b.iter(|| {
+            let k = random(SIZE).to_be_bytes();
+            db.transaction::<_, _, sled::Error>(|db| {
+                db.remove(&k)?;
+                Ok(())
+            })
+            .unwrap();
+        })
+    });
+}
+
 fn sled_empty_opens(c: &mut Criterion) {
     let _ = std::fs::remove_dir_all("empty_opens");
     c.bench_function("empty opens", |b| {
@@ -152,6 +278,9 @@ criterion_group!(
     sled_bulk_load,
     sled_monotonic_crud,
     sled_random_crud,
-    sled_empty_opens
+    sled_empty_opens,
+    tx_sled_bulk_load,
+    tx_sled_monotonic_crud,
+    tx_sled_random_crud,
 );
 criterion_main!(benches);
