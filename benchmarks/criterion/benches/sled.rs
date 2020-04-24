@@ -86,80 +86,6 @@ fn mk_persy() -> persy::Persy {
     Persy::open_from_file(temp, Config::new()).unwrap()
 }
 
-fn persy_bulk_load(c: &mut Criterion) {
-    use persy::*;
-
-    let mut count = 0_u32;
-    let mut bytes = |len| -> ByteVec {
-        count += 1;
-        ByteVec(count.to_be_bytes().iter().cycle().take(len).copied().collect())
-    };
-
-    let mut bench = |key_len, val_len| {
-        c.bench_function(
-            &format!(
-                "persy: bulk load key/value lengths {}/{}",
-                key_len, val_len
-            ),
-            |b| {
-                let db = mk_persy();
-                let mut tx = db.begin().unwrap();
-                tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE)
-                    .unwrap();
-
-                b.iter(|| {
-                    tx.put("", bytes(key_len), bytes(val_len)).unwrap();
-                });
-                tx.prepare_commit().unwrap().commit().unwrap();
-            },
-        );
-    };
-
-    for key_len in &[10_usize, 128, 256, 512] {
-        for val_len in &[0_usize, 10, 128, 256, 512, 1024, 2048, 4096, 8192] {
-            bench(*key_len, *val_len)
-        }
-    }
-}
-
-fn persy_single_tx(c: &mut Criterion) {
-    use persy::*;
-
-    let mut count = 0_u32;
-    let mut bytes = |len| -> ByteVec {
-        count += 1;
-        ByteVec(count.to_be_bytes().iter().cycle().take(len).copied().collect())
-    };
-
-    let mut bench = |key_len, val_len| {
-        c.bench_function(
-            &format!(
-                "persy: key/value lengths {}/{} - one transaction per key",
-                key_len, val_len
-            ),
-            |b| {
-                let db = mk_persy();
-                let mut tx = db.begin().unwrap();
-                tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE)
-                    .unwrap();
-                tx.prepare_commit().unwrap().commit().unwrap();
-
-                b.iter(|| {
-                    let mut tx = db.begin().unwrap();
-                    tx.put("", bytes(key_len), bytes(val_len)).unwrap();
-                    tx.prepare_commit().unwrap().commit().unwrap();
-                });
-            },
-        );
-    };
-
-    for key_len in &[10_usize, 128, 256, 512] {
-        for val_len in &[0_usize, 10, 128, 256, 512, 1024, 2048, 4096, 8192] {
-            bench(*key_len, *val_len)
-        }
-    }
-}
-
 fn sled_monotonic_crud(c: &mut Criterion) {
     let db = Config::new().temporary(true).flush_every_ms(None).open().unwrap();
 
@@ -213,6 +139,20 @@ fn sled_random_crud(c: &mut Criterion) {
             db.remove(k).unwrap();
         })
     });
+}
+
+fn sled_empty_opens(c: &mut Criterion) {
+    let _ = std::fs::remove_dir_all("empty_opens");
+    c.bench_function("empty opens", |b| {
+        b.iter(|| {
+            Config::new()
+                .path(format!("empty_opens/{}.db", counter()))
+                .flush_every_ms(None)
+                .open()
+                .unwrap()
+        })
+    });
+    let _ = std::fs::remove_dir_all("empty_opens");
 }
 
 fn tx_sled_bulk_load(c: &mut Criterion) {
@@ -340,18 +280,131 @@ fn tx_sled_random_crud(c: &mut Criterion) {
     });
 }
 
-fn sled_empty_opens(c: &mut Criterion) {
-    let _ = std::fs::remove_dir_all("empty_opens");
-    c.bench_function("empty opens", |b| {
+fn persy_bulk_load(c: &mut Criterion) {
+    use persy::*;
+
+    let mut count = 0_u32;
+    let mut bytes = |len| -> ByteVec {
+        count += 1;
+        ByteVec(count.to_be_bytes().iter().cycle().take(len).copied().collect())
+    };
+
+    let mut bench = |key_len, val_len| {
+        c.bench_function(
+            &format!(
+                "persy: bulk load key/value lengths {}/{}",
+                key_len, val_len
+            ),
+            |b| {
+                let db = mk_persy();
+                let mut tx = db.begin().unwrap();
+                tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE)
+                    .unwrap();
+
+                b.iter(|| {
+                    tx.put("", bytes(key_len), bytes(val_len)).unwrap();
+                });
+                tx.prepare_commit().unwrap().commit().unwrap();
+            },
+        );
+    };
+
+    for key_len in &[10_usize, 128, 256, 512] {
+        for val_len in &[0_usize, 10, 128, 256, 512, 1024, 2048, 4096, 8192] {
+            bench(*key_len, *val_len)
+        }
+    }
+}
+
+fn persy_monotonic_crud(c: &mut Criterion) {
+    use persy::*;
+
+    let db = mk_persy();
+    let mut tx = db.begin().unwrap();
+    tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE).unwrap();
+    tx.prepare_commit().unwrap().commit().unwrap();
+
+    c.bench_function("persy: monotonic inserts", |b| {
+        let mut count = 0_u32;
         b.iter(|| {
-            Config::new()
-                .path(format!("empty_opens/{}.db", counter()))
-                .flush_every_ms(None)
-                .open()
-                .unwrap()
+            count += 1;
+            let mut tx = db.begin().unwrap();
+            tx.put::<ByteVec, ByteVec>(
+                "",
+                count.to_be_bytes().to_vec().into(),
+                vec![].into(),
+            )
+            .unwrap();
+            tx.prepare_commit().unwrap().commit().unwrap();
         })
     });
-    let _ = std::fs::remove_dir_all("empty_opens");
+
+    c.bench_function("persy: monotonic gets", |b| {
+        let mut count = 0_u32;
+        b.iter(|| {
+            count += 1;
+            let mut tx = db.begin().unwrap();
+            tx.get::<ByteVec, ByteVec>(
+                "",
+                &count.to_be_bytes().to_vec().into(),
+            )
+            .unwrap();
+            tx.prepare_commit().unwrap().commit().unwrap();
+        })
+    });
+
+    c.bench_function("persy: monotonic removals", |b| {
+        let mut count = 0_u32;
+        b.iter(|| {
+            count += 1;
+            let mut tx = db.begin().unwrap();
+            tx.remove::<ByteVec, ByteVec>(
+                "",
+                count.to_be_bytes().to_vec().into(),
+                None,
+            )
+            .unwrap();
+            tx.prepare_commit().unwrap().commit().unwrap();
+        })
+    });
+}
+
+fn persy_random_crud(c: &mut Criterion) {
+    const SIZE: u32 = 65536;
+
+    use persy::*;
+
+    let db = mk_persy();
+    let mut tx = db.begin().unwrap();
+    tx.create_index::<ByteVec, ByteVec>("", ValueMode::EXCLUSIVE).unwrap();
+    tx.prepare_commit().unwrap().commit().unwrap();
+
+    c.bench_function("persy: random inserts", |b| {
+        b.iter(|| {
+            let k = random(SIZE).to_be_bytes().to_vec().into();
+            let mut tx = db.begin().unwrap();
+            tx.put::<ByteVec, ByteVec>("", k, vec![].into()).unwrap();
+            tx.prepare_commit().unwrap().commit().unwrap();
+        })
+    });
+
+    c.bench_function("persy: random gets", |b| {
+        b.iter(|| {
+            let k = random(SIZE).to_be_bytes().to_vec();
+            let mut tx = db.begin().unwrap();
+            tx.get::<ByteVec, ByteVec>("", &k.into()).unwrap();
+            tx.prepare_commit().unwrap().commit().unwrap();
+        })
+    });
+
+    c.bench_function("random removals", |b| {
+        b.iter(|| {
+            let k = random(SIZE).to_be_bytes().to_vec().into();
+            let mut tx = db.begin().unwrap();
+            tx.remove::<ByteVec, ByteVec>("", k, None).unwrap();
+            tx.prepare_commit().unwrap().commit().unwrap();
+        })
+    });
 }
 
 criterion_group!(
@@ -363,7 +416,8 @@ criterion_group!(
     tx_sled_bulk_load,
     tx_sled_monotonic_crud,
     tx_sled_random_crud,
-    persy_single_tx,
     persy_bulk_load,
+    persy_monotonic_crud,
+    persy_random_crud,
 );
 criterion_main!(benches);
