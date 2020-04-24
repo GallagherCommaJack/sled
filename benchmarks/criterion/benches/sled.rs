@@ -407,6 +407,10 @@ fn persy_random_crud(c: &mut Criterion) {
     });
 }
 
+fn persy_empty_opens(c: &mut Criterion) {
+    c.bench_function("persy: empty opens", |b| b.iter(|| mk_persy()));
+}
+
 criterion_group!(
     benches,
     sled_bulk_load,
@@ -419,5 +423,6 @@ criterion_group!(
     persy_bulk_load,
     persy_monotonic_crud,
     persy_random_crud,
+    persy_empty_opens,
 );
 criterion_main!(benches);
