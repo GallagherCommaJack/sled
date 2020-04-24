@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::time::Instant;
 
@@ -204,41 +206,71 @@ fn tx_sled_bulk_load(c: &mut Criterion) {
 fn tx_sled_monotonic_crud(c: &mut Criterion) {
     let db = Config::new().temporary(true).flush_every_ms(None).open().unwrap();
 
-    c.bench_function("tx monotonic inserts", |b| {
-        let mut count = 0_u32;
-        b.iter(|| {
-            count += 1;
-            db.transaction::<_, _, ()>(|db| {
-                db.insert(&count.to_be_bytes(), vec![])?;
-                Ok(())
-            })
-            .unwrap();
-        })
-    });
+    let mut bench = |batch_size: usize| {
+        c.bench_function(
+            &format!("monotonic inserts tx, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        db.transaction::<_, _, ()>(|db| {
+                            for count in chunk {
+                                db.insert(&count.to_be_bytes(), vec![])?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("tx monotonic gets", |b| {
-        let mut count = 0_u32;
-        b.iter(|| {
-            count += 1;
-            db.transaction::<_, _, ()>(|db| {
-                db.get(&count.to_be_bytes())?;
-                Ok(())
-            })
-            .unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("monotonic gets tx, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        db.transaction::<_, _, ()>(|db| {
+                            for count in chunk {
+                                db.get(&count.to_be_bytes())?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("tx monotonic removals", |b| {
-        let mut count = 0_u32;
-        b.iter(|| {
-            count += 1;
-            db.transaction::<_, _, ()>(|db| {
-                db.remove(&count.to_be_bytes())?;
-                Ok(())
-            })
-            .unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("monotonic removals tx, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        db.transaction::<_, _, ()>(|db| {
+                            for count in chunk {
+                                db.remove(&count.to_be_bytes())?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                    start.elapsed()
+                })
+            },
+        );
+    };
+
+    for bs in vec![1, 2, 4, 8, 16, 32] {
+        bench(bs);
+    }
 }
 
 fn tx_sled_random_crud(c: &mut Criterion) {
@@ -246,38 +278,74 @@ fn tx_sled_random_crud(c: &mut Criterion) {
 
     let db = Config::new().temporary(true).flush_every_ms(None).open().unwrap();
 
-    c.bench_function("tx random inserts", |b| {
-        b.iter(|| {
-            let k = random(SIZE).to_be_bytes();
-            db.transaction::<_, _, sled::Error>(|db| {
-                db.insert(&k, vec![])?;
-                Ok(())
-            })
-            .unwrap();
-        })
-    });
+    let mut bench = |batch_size: usize| {
+        c.bench_function(
+            &format!("random inserts tx, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        db.transaction::<_, _, ()>(|db| {
+                            for _ in chunk {
+                                let k = random(SIZE).to_be_bytes();
+                                db.insert(&k, vec![])?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("tx random gets", |b| {
-        b.iter(|| {
-            let k = random(SIZE).to_be_bytes();
-            db.transaction::<_, _, sled::Error>(|db| {
-                db.get(&k)?;
-                Ok(())
-            })
-            .unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("random gets tx, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        db.transaction::<_, _, ()>(|db| {
+                            for _ in chunk {
+                                let k = random(SIZE).to_be_bytes();
+                                db.get(&k)?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                    start.elapsed()
+                })
+            },
+        );
 
-    c.bench_function("tx random removals", |b| {
-        b.iter(|| {
-            let k = random(SIZE).to_be_bytes();
-            db.transaction::<_, _, sled::Error>(|db| {
-                db.remove(&k)?;
-                Ok(())
-            })
-            .unwrap();
-        })
-    });
+        c.bench_function(
+            &format!("random removals tx, batch size: {}", batch_size),
+            |b| {
+                b.iter_custom(|iters| {
+                    let all_iters: Vec<_> = (0..iters).collect();
+                    let start = Instant::now();
+                    for chunk in all_iters.chunks(batch_size) {
+                        db.transaction::<_, _, ()>(|db| {
+                            for _ in chunk {
+                                let k = random(SIZE).to_be_bytes();
+                                db.remove(&k)?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                    start.elapsed()
+                })
+            },
+        );
+    };
+
+    for bs in vec![1, 2, 4, 8, 16, 32] {
+        bench(bs);
+    }
 }
 
 fn persy_bulk_load(c: &mut Criterion) {
