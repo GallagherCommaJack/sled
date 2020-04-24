@@ -14,6 +14,9 @@ use sled::Config;
 )]
 static ALLOC: Jemalloc = Jemalloc;
 
+const BATCH_SIZES: &[usize] =
+    &[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+
 fn counter() -> usize {
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
@@ -268,8 +271,8 @@ fn tx_sled_monotonic_crud(c: &mut Criterion) {
         );
     };
 
-    for bs in vec![1, 2, 4, 8, 16, 32] {
-        bench(bs);
+    for bs in BATCH_SIZES {
+        bench(*bs);
     }
 }
 
@@ -343,8 +346,8 @@ fn tx_sled_random_crud(c: &mut Criterion) {
         );
     };
 
-    for bs in vec![1, 2, 4, 8, 16, 32] {
-        bench(bs);
+    for bs in BATCH_SIZES {
+        bench(*bs);
     }
 }
 
